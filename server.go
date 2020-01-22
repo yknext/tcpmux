@@ -11,17 +11,20 @@ import (
 
 var (
 	localAddr string
-	forwardAddr string
+	remoteAddr string
 )
 
 func init()  {
-	flag.StringVar(&localAddr, "local", "0.0.0.0:80", "listen address")
-	flag.StringVar(&forwardAddr, "forward", "192.168.200.157:80", "forward address")
+	flag.StringVar(&localAddr, "local", "0.0.0.0:10556", "listen address")
+	flag.StringVar(&remoteAddr, "remote", "127.0.0.1:10555", "remote address")
 	flag.Parse()
 }
 
+
 func main() {
-	fmt.Println("Starting mux server")
+	fmt.Println("Starting mux client")
+	// Get a TCP connection
+
 	// Accept a TCP connection
 	listener, err := net.Listen("tcp", localAddr)
 	if err != nil{
@@ -31,53 +34,54 @@ func main() {
 
 	for{
 
-		muxconn, err := listener.Accept()
+		remoteconn, err := net.Dial("tcp", remoteAddr)
 		if err != nil {
-			println("accept err:", err)
+			println("remote conn err:", err)
+		}
+
+		// Setup client side of yamux
+		log.Println("creating client session")
+		session, err := yamux.Client(remoteconn, nil)
+		if err != nil {
+			println("creating client session err:", err)
 			return
 		}
 
-		go func(muxconn net.Conn) {
-			// Setup server side of yamux
-			log.Println("creating server session")
-			session, err := yamux.Server(muxconn, nil)
+		for{
+			localconn, err := listener.Accept()
 			if err != nil {
-				println("creating server session err:", err)
+				println("accept err:", err)
 				return
 			}
 
-
-			for{
-				// Accept a stream
-				log.Println("accepting stream")
-				conn, err := session.Accept()
-				if err != nil {
-					println("accepting stream err:", err)
-					return
-				}
-
-				go func(conn net.Conn) {
-					defer conn.Close()
-
-					forwardConn,err := net.Dial("tcp", forwardAddr)
-					if err!= nil {
-						println("forward connect error ! " , err)
-						return
-					}
-
-					up, down := make(chan int64), make(chan int64)
-					go pipe(conn, forwardConn, up)
-					go pipe(forwardConn, conn, down)
-					<-up
-					<-down
-					return
-				}(conn)
+			// Open a new stream
+			log.Println("opening stream")
+			forwardConn, err := session.Open()
+			if err != nil {
+				println("listen err:", err)
+				return
 			}
 
-		}(muxconn)
+			go func(conn net.Conn) {
+				defer conn.Close()
+				up, down := make(chan int64), make(chan int64)
+				go pipe(conn, forwardConn, up)
+				go pipe(forwardConn, conn, down)
+				<-up
+				<-down
+				return
+			}(localconn)
+
+		}
+
+
+
 	}
 
+
+
 }
+
 
 func pipe(src io.Reader, dst io.WriteCloser, result chan<- int64) {
 	defer dst.Close()
