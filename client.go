@@ -15,8 +15,8 @@ var (
 )
 
 func init()  {
-	flag.StringVar(&localAddr, "local", "0.0.0.0:81", "listen address")
-	flag.StringVar(&remoteAddr, "remote", "127.0.0.1:80", "remote address")
+	flag.StringVar(&localAddr, "local", "0.0.0.0:10556", "listen address")
+	flag.StringVar(&remoteAddr, "remote", "127.0.0.1:10555", "remote address")
 	flag.Parse()
 }
 
@@ -54,17 +54,16 @@ func main() {
 				return
 			}
 
+			// Open a new stream
+			log.Println("opening stream")
+			forwardConn, err := session.Open()
+			if err != nil {
+				println("listen err:", err)
+				return
+			}
+
 			go func(conn net.Conn) {
 				defer conn.Close()
-
-				// Open a new stream
-				log.Println("opening stream")
-				forwardConn, err := session.Open()
-				if err != nil {
-					println("listen err:", err)
-					return
-				}
-
 				up, down := make(chan int64), make(chan int64)
 				go pipe(conn, forwardConn, up)
 				go pipe(forwardConn, conn, down)
